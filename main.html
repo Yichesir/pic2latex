@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI公式识别 - LaTeX转换工具</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --success: #10b981;
+            --error: #ef4444;
+            --background: #f8fafc;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            background: var(--background);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            padding-top: 100px;
+        }
+
+        /* 上传区域美化 */
+        .upload-area {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .upload-area:hover {
+            transform: translateY(-2px);
+        }
+
+        #preview {
+            height: 400px;
+            border: 2px dashed var(--border);
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(145deg, #ffffff, #f8fafc);
+        }
+
+        #preview::before {
+            content: "点击选择或拖入图片";
+            position: absolute;
+            bottom: 1rem;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        #preview.dragover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        #preview img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+
+        /* 输出区域美化 */
+        .output-area {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        #output {
+            flex: 1;
+            padding: 1.25rem;
+            background: #f8fafc;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.95rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            tab-size: 2;
+            color: #2d3748;
+            overflow: auto;
+        }
+        #output::before {
+            content: "LaTeX Output";
+            display: block;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            color: #718096;
+            margin-bottom: 0.5rem;
+        }
+        #output::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #output::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+
+        #output::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        /* 按钮美化 */
+        #regenerateBtn {
+            align-self: flex-start;
+            padding: 0.75rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        #regenerateBtn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+        }
+
+        #regenerateBtn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* 加载动画 */
+        /* 优化加载动画样式 */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .global-loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 1rem;
+            z-index: 9999;
+            animation: fadeIn 0.3s ease-out;
+            backdrop-filter: blur(8px);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(99, 102, 241, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        .loading-text {
+            color: #64748b;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Toast提示 */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.75rem 1.5rem;
+            background: var(--text);
+            color: white;
+            border-radius: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            animation: toastIn 0.3s ease-out;
+        }
+
+        .toast::before {
+            content: "";
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .toast.error::before {
+            background: var(--error);
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(100%); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        /* 新增导航栏样式 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            padding: 0 2rem;
+            z-index: 1000;
+        }
+
+        .nav-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .settings-btn {
+            margin-left: auto;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .settings-btn:hover {
+            transform: rotate(90deg);
+        }
+
+        /* 配置模态框样式 */
+        .config-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .config-content {
+            background: white;
+            width: 500px;
+            padding: 2rem;
+            border-radius: 1rem;
+            animation: modalIn 0.3s ease-out;
+        }
+
+        .config-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .form-group label {
+            font-weight: 500;
+            color: #475569;
+        }
+
+        .form-input {
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #6366f1;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+    <!-- 引入Fira Code字体 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<!-- 导航栏 -->
+<nav class="navbar">
+    <div class="nav-title">AI公式识别</div>
+    <button class="settings-btn" onclick="toggleConfigModal()">
+        <i class="fas fa-cog fa-lg"></i>
+    </button>
+</nav>
+
+<!-- 配置模态框 -->
+<div class="config-modal" id="configModal">
+    <div class="config-content">
+        <h2>API配置</h2>
+        <form class="config-form" id="configForm" onsubmit="saveConfig(event)">
+            <div class="form-group">
+                <label for="apiKey">API密钥</label>
+                <input type="password" id="apiKey" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+                <label for="baseUrl">API地址</label>
+                <input type="url" id="baseUrl" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+                <label for="modelName">模型名称</label>
+                <input type="text" id="modelName" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+                <label for="timeout">超时时间(ms)</label>
+                <input type="number" id="timeout" class="form-input" min="1000" required>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="toggleConfigModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存配置</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 上传区域 -->
+    <div class="upload-area">
+        <div id="preview" ondragover="handleDragOver(event)" ondrop="handleDrop(event)">
+            <i class="fas fa-cloud-upload-alt fa-3x" style="color: #cbd5e1;"></i>
+        </div>
+        <input type="file" id="fileInput" hidden accept="image/*">
+    </div>
+
+    <!-- 输出区域 -->
+    <div class="output-area">
+        <div id="output">LaTeX 结果将在此显示...</div>
+        <button id="regenerateBtn">
+            <i class="fas fa-sync-alt"></i>
+            重新生成
+        </button>
+    </div>
+</div>
+
+<script>
+    // 配置管理
+    const CONFIG_KEYS = ['API_KEY', 'BASE_URL', 'MODEL_NAME', 'TIMEOUT'];
+
+    // 状态管理
+    let state = {
+        currentImage: null,
+        activeRequest: null,
+        isLoading: false,
+        config: loadConfig()
+    };
+
+    // DOM元素引用
+    const elements = {
+        preview: document.getElementById('preview'),
+        fileInput: document.getElementById('fileInput'),
+        output: document.getElementById('output'),
+        regenerateBtn: document.getElementById('regenerateBtn'),
+        configModal: document.getElementById('configModal'),
+        configForm: document.getElementById('configForm')
+    };
+
+    // 初始化事件监听
+    function init() {
+        // 文件操作事件
+        elements.preview.addEventListener('click', () => elements.fileInput.click());
+        elements.fileInput.addEventListener('change', handleFileSelect);
+        document.addEventListener('paste', handlePaste);
+        elements.regenerateBtn.addEventListener('click', handleRegenerate);
+
+        // 拖放事件
+        elements.preview.addEventListener('dragover', handleDragOver);
+        elements.preview.addEventListener('dragleave', handleDragLeave);
+        elements.preview.addEventListener('drop', handleDrop);
+
+        // 配置相关事件
+        document.querySelector('.settings-btn').addEventListener('click', toggleConfigModal);
+        elements.configForm.addEventListener('submit', saveConfig);
+    }
+
+    // ======================
+    // 文件操作相关函数
+    // ======================
+    async function handleFileSelect(e) {
+        const file = e.target.files[0];
+        if (file) await processImage(file);
+    }
+
+    // ======================
+    // 拖放处理函数
+    // ======================
+    function handleDragOver(e) {
+        e.preventDefault();
+        elements.preview.classList.add('dragover');
+    }
+
+    function handleDragLeave(e) {
+        e.preventDefault();
+        elements.preview.classList.remove('dragover');
+    }
+
+    async function handleDrop(e) {
+        e.preventDefault();
+        elements.preview.classList.remove('dragover');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const file = files[0];
+            if (validateFile(file)) {
+                await processImage(file);
+            }
+        }
+    }
+
+    // ======================
+    // 剪贴板处理函数
+    // ======================
+    async function handlePaste(e) {
+        if (state.isLoading) {
+            showToast('请等待当前操作完成', 'error');
+            return;
+        }
+
+        if (!e.clipboardData?.items) return;
+
+        // 检测图片数据
+        for (const item of e.clipboardData.items) {
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                e.preventDefault();
+                try {
+                    const blob = item.getAsFile();
+                    const file = new File([blob], `pasted-${Date.now()}.${item.type.split('/')[1]}`, {
+                        type: item.type,
+                        lastModified: Date.now()
+                    });
+
+                    if (validateFile(file)) {
+                        await processImage(file);
+                    }
+                    return;
+                } catch (error) {
+                    showToast('图片粘贴失败', 'error');
+                    console.error('Paste error:', error);
+                }
+            }
+        }
+
+        // 兼容Safari等浏览器
+        if (e.clipboardData.files.length > 0) {
+            const file = e.clipboardData.files[0];
+            if (file.type.startsWith('image/')) {
+                e.preventDefault();
+                await processImage(file);
+                return;
+            }
+        }
+
+        showToast('剪贴板中没有检测到图片', 'error');
+    }
+
+    // ======================
+    // 主处理流程
+    // ======================
+    async function processImage(file) {
+        try {
+            if (state.isLoading) return;
+            startLoading();
+
+            // 读取并存储图片
+            state.currentImage = {
+                base64: await fileToBase64(file),
+                file
+            };
+
+            // 显示预览
+            elements.preview.innerHTML = `<img src="${URL.createObjectURL(file)}">`;
+
+            // 获取结果
+            const latex = await getLatexResult(state.currentImage.base64);
+            showResult(latex);
+            elements.regenerateBtn.style.display = 'block';
+            showToast('转换成功', 'success');
+        } catch (error) {
+            handleError(error);
+        } finally {
+            finishLoading();
+        }
+    }
+
+    // ======================
+    // API相关函数
+    // ======================
+    async function getLatexResult(imageBase64) {
+        const controller = new AbortController();
+        state.activeRequest = controller;
+
+        try {
+            const response = await Promise.race([
+                fetch(`${state.config.BASE_URL}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${state.config.API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: state.config.MODEL_NAME,
+                        messages: [{
+                            role: "user",
+                            content: [
+                                {
+                                    type: "image_url",
+                                    image_url: { url: `data:image/jpeg;base64,${imageBase64}` }
+                                },
+                                {
+                                    type: "text",
+                                    text: "请将图片中的数学公式转换为严格标准的LaTeX代码，只需输出最终的LaTeX代码，不要任何解释和其他内容"
+                                }
+                            ]
+                        }]
+                    }),
+                    signal: controller.signal
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('请求超时')), state.config.TIMEOUT)
+                )
+            ]);
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'API请求失败');
+            }
+
+            const data = await response.json();
+            return cleanLatex(data.choices[0].message.content);
+        } finally {
+            state.activeRequest = null;
+        }
+    }
+
+    // ======================
+    // 配置管理函数
+    // ======================
+    function loadConfig() {
+        const defaultConfig = {
+            API_KEY: "",
+            BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            MODEL_NAME: "qwen-vl-max",
+            TIMEOUT: 30000
+        };
+
+        try {
+            const saved = localStorage.getItem('API_CONFIG');
+            return saved ? JSON.parse(saved) : defaultConfig;
+        } catch {
+            return defaultConfig;
+        }
+    }
+
+    function saveConfig(e) {
+        e.preventDefault();
+
+        const newConfig = {
+            API_KEY: document.getElementById('apiKey').value.trim(),
+            BASE_URL: document.getElementById('baseUrl').value.trim(),
+            MODEL_NAME: document.getElementById('modelName').value.trim(),
+            TIMEOUT: parseInt(document.getElementById('timeout').value) || 30000
+        };
+
+        if (!validateConfig(newConfig)) return;
+
+        localStorage.setItem('API_CONFIG', JSON.stringify(newConfig));
+        state.config = newConfig;
+        toggleConfigModal();
+        showToast('配置保存成功', 'success');
+    }
+
+    function validateConfig(config) {
+        if (!config.API_KEY) {
+            showToast('API密钥不能为空', 'error');
+            return false;
+        }
+        if (isNaN(config.TIMEOUT) || config.TIMEOUT < 1000) {
+            showToast('超时时间需大于1000ms', 'error');
+            return false;
+        }
+        return true;
+    }
+
+    function toggleConfigModal() {
+        if (elements.configModal.style.display === 'block') {
+            elements.configModal.style.display = 'none';
+        } else {
+            document.getElementById('apiKey').value = state.config.API_KEY;
+            document.getElementById('baseUrl').value = state.config.BASE_URL;
+            document.getElementById('modelName').value = state.config.MODEL_NAME;
+            document.getElementById('timeout').value = state.config.TIMEOUT;
+            elements.configModal.style.display = 'block';
+        }
+    }
+
+    // ======================
+    // 工具函数
+    // ======================
+    function validateFile(file) {
+        if (!file) return false;
+        if (file.size > 5 * 1024 * 1024) {
+            showToast('文件大小不能超过5MB', 'error');
+            return false;
+        }
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+            showToast('仅支持PNG/JPEG格式', 'error');
+            return false;
+        }
+        return true;
+    }
+
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function cleanLatex(text) {
+        return text
+            .replace(/```\s*latex?/g, '')
+            .replace(/```/g, '')
+            .trim();
+    }
+
+    // ======================
+    // UI相关函数
+    // ======================
+    function startLoading() {
+        state.isLoading = true;
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'global-loading';
+        loadingOverlay.innerHTML = `
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在处理中...</div>
+        `;
+        document.body.appendChild(loadingOverlay);
+        elements.regenerateBtn.disabled = true;
+    }
+
+    function finishLoading() {
+        state.isLoading = false;
+        document.querySelector('.global-loading')?.remove();
+        elements.regenerateBtn.disabled = false;
+    }
+
+    function showResult(text, animate = false) {
+        elements.output.textContent = text;
+        if (animate) {
+            elements.output.style.animation = 'highlight 1s';
+            setTimeout(() => elements.output.style.animation = '', 1000);
+        }
+    }
+
+    function handleError(error) {
+        console.error(error);
+        showToast(error.message || '发生未知错误', 'error');
+        elements.output.textContent = `错误: ${error.message}`;
+    }
+
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.style.animation = 'toastOut 0.3s ease-in';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // 初始化
+    init();
+</script>
+
+</body>
+</html>
